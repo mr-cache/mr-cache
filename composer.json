@@ -33,5 +33,6 @@
                 "MrCache\\MrCacheServiceProvider"
             ]
         }
-    }
+    },
+    "minimum-stability": "dev"
 }
