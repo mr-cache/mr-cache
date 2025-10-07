@@ -105,6 +105,48 @@ trait CacheableModel
 
                 return $cacheManager->rememberQuery($this, fn() => parent::get($columns));
             }
+            
+            /**
+             * Handle bulk updates with cache invalidation.
+             */
+            public function update(array $values)
+            {
+                /** @var InvalidationInterface $invalidator */
+                $invalidator = app(\MrCache\Contracts\InvalidationInterface::class);
+    
+                // Get affected IDs before update (to invalidate their caches)
+                $ids = $this->pluck($this->getModel()->getKeyName())->toArray();
+    
+                $updated = parent::update($values);
+    
+                // Invalidate cache for affected rows
+                foreach ($ids as $id) {
+                    $invalidator->invalidateRow($this->getModel()->getTable(), $id);
+                }
+    
+                return $updated;
+            }
+    
+            /**
+             * Handle bulk deletes with cache invalidation.
+             */
+            public function delete()
+            {
+                /** @var InvalidationInterface $invalidator */
+                $invalidator = app(\MrCache\Contracts\InvalidationInterface::class);
+    
+                // Get affected IDs before delete (to invalidate their caches)
+                $ids = $this->pluck($this->getModel()->getKeyName())->toArray();
+    
+                $deleted = parent::delete();
+    
+                // Invalidate cache for each deleted row
+                foreach ($ids as $id) {
+                    $invalidator->invalidateRow($this->getModel()->getTable(), $id);
+                }
+    
+                return $deleted;
+            }
         };
     }
 
