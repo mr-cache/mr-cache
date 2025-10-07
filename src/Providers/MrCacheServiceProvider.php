@@ -61,7 +61,7 @@ class MrCacheServiceProvider extends ServiceProvider
         });
 
         $this->commands([
-            MrCache FlushCommand::class,
+            MrCacheFlushCommand::class,
             MrCacheStatsCommand::class,
         ]);
     }
