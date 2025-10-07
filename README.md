@@ -2,7 +2,6 @@
 
 An advanced, native Redis caching layer for PHP frameworks Eloquent queries, bypassing the standard Laravel Cache facade for maximum performance and control.
 
-![PHPUnit Tests](https://github.com/mr-cache/mr-cache/actions/workflows/phpunit.yml/badge.svg)
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/mrcache/mrcache.svg?style=flat-square)](https://packagist.org/packages/mrcache/mrcache)
 [![Total Downloads](https://img.shields.io/packagist/dt/mrcache/mrcache.svg?style=flat-square)](https://packagist.org/packages/mrcache/mrcache)
 
@@ -195,8 +194,3 @@ return [
   3. Global default TTL (`config('mrcache.default_ttl')`)
 
 ---
-
-# DISCLAIMER
-
-* This version is still under development; use in production is at your own risk.
-* Production-ready version will be released soon.
