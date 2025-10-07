@@ -105,7 +105,7 @@ Post::where('is_archived', true)->update(['is_published' => false]);
 // Similarly for mass deletes
 Post::where('is_archived', true)->delete();
 ```
-✅ No need to manually flush the cache for affected rows; MrCache handles it automatically.
+* ✅ No need to manually flush the cache for affected rows; MrCache handles it automatically.
 
 
 ### 5. Invalidation Rules
