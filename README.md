@@ -96,16 +96,16 @@ No manual listing of relationships required; MrCache inspects the Eloquent model
 ### 4.3 Conditional Table/Row Invalidation
 
 * Updates to a single row only invalidate queries that include that row.
-* Updates with `where` conditions automatically target only affected queries.
-* Mass updates without conditions → invalidate the entire table manually:
+* Mass updates or deletes with where conditions now automatically invalidate only the affected rows.
 
 ```php
-// WARNING: affects multiple rows, auto invalidation not possible
+// Automatically invalidates cache for all rows where 'is_archived' = true
 Post::where('is_archived', true)->update(['is_published' => false]);
 
-// Flush the entire table cache
-Artisan::call('mrcache:flush', ['--model' => 'App\\Models\\Post']);
+// Similarly for mass deletes
+Post::where('is_archived', true)->delete();
 ```
+✅ No need to manually flush the cache for affected rows; MrCache handles it automatically.
 
 
 ### 5. Invalidation Rules
@@ -120,15 +120,15 @@ Invalidation is automatic and granular.
   $post->save(); // Automatically invalidates cache for Post #1
   ```
 
-* **Table-level Invalidation:** Mass updates or deletes via the query builder do not fire model events. For these cases, MrCache cannot know which specific rows were affected, so it does not automatically invalidate. You should manually flush the cache for the entire model/table after such operations.
+* **Mass Row Invalidation:** Mass updates or deletes via the query builder now automatically invalidate the cache for only the affected rows.
 
   ```php
-  // WARNING: This does NOT trigger automatic invalidation.
+  // Automatically invalidates cache for all rows where 'is_archived' = true
   Post::where('is_archived', true)->update(['is_published' => false]);
-
-  // Manually flush the cache for the Post model afterwards.
-  Artisan::call('mrcache:flush', ['--model' => 'App\\Models\\Post']);
+  Post::where('is_archived', true)->delete();
   ```
+
+✅ MrCache now ensures cache consistency for all affected rows, without manual flushes.
 
 ---
 
