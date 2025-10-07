@@ -132,7 +132,7 @@ Invalidation is automatic and granular.
 
 ---
 
-## 5. Artisan Commands
+## 6. Artisan Commands
 
 | Command                                                    | Description                                       |
 | ---------------------------------------------------------- | ------------------------------------------------- |
