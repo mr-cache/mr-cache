@@ -128,7 +128,7 @@ Invalidation is automatic and granular.
   Post::where('is_archived', true)->delete();
   ```
 
-✅ MrCache now ensures cache consistency for all affected rows, without manual flushes.
+* ✅ MrCache now ensures cache consistency for all affected rows, without manual flushes.
 
 ---
 
