@@ -37,6 +37,10 @@ trait CacheableModel
         static::saved(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
             $invalidator->invalidateRow($model->getTable(), $model->getKey());
         });
+        
+        static::created(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
+            $invalidator->invalidateGeneralQueries($model->getTable());
+        });
 
         static::deleted(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
             $invalidator->invalidateRow($model->getTable(), $model->getKey());

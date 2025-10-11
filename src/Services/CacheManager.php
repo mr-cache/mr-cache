@@ -77,6 +77,34 @@ final class CacheManager
 
         return $results;
     }
+    
+    private function isGeneralQuery(Builder $builder): bool 
+    {
+        $wheres = $builder->getQuery()->wheres ?? [];
+        
+        $columns = [];
+        
+        foreach ($wheres as $where) {
+            if (isset($where['column'])) {
+                $columns[] = $where['column'];
+            }
+        }
+
+        $primaryKey = $this->getKeyName();
+        $uniqueKeys = $this->uniqueKeys ?? [];
+
+        $hasPrimaryOrUnique = in_array($primaryKey, $columns) || !empty(array_intersect($uniqueKeys, $columns));
+        
+        return !$hasPrimaryOrUnique;
+    }
+    
+    private function rememberGeneralQuery(string $table, string $queryKey)
+    {
+        $keyOfSet = $this->keyGenerator->generateMultiRowsIndexKey($table);
+        $this->client->pipeline(function ($pipe) use ($keyOfSet, $queryKey) {
+            $pipe->sAdd($keyOfSet, $queryKey);
+        });
+    }
 
     /**
      * Stores the query results in Redis.
@@ -111,6 +139,11 @@ final class CacheManager
                 $pipe->sAdd($rowIndexKey, $queryKey);
             }
         });
+        
+        if ($this->isGeneralQuery($builder)) {
+            $this->rememberGeneralQuery($table, $queryKey);
+        }
+        
     }
 
     private function determineTtl(Builder $builder): int

@@ -83,6 +83,18 @@ final class InvalidationManager implements InvalidationInterface
         // The query keys are gone, so the index set can be removed.
         $this->client->del($rowIndexKey);
     }
+    
+    public function invalidateGeneralQueries(string $table): void 
+    {
+        $theSet = $this->keyGenerator->generateMultiRowsIndexKey($table);
+        $queryKeys = $this->client->sMembers($theSet);
+        
+        if (!empty($queryKeys)) {
+            $this->deleteQueryKeysAtomically(...$queryKeys);
+        }
+        
+        $this->client->del($theSet);
+    }
 
     /**
      * {@inheritdoc}

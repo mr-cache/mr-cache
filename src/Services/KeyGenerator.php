@@ -39,6 +39,11 @@ final class KeyGenerator implements KeyGeneratorInterface
     {
         return "{$this->prefix}:rowindex:table:{$table}:pk:{$primaryKey}";
     }
+    
+    public function generateMultiRowsIndexKey(string $table): string
+    {
+        return "{$this->prefix}:multirowsindex:table:{$table}";
+    }
 
     public function getMetricsKey(string $metric): string
     {
