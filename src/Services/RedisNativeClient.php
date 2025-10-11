@@ -174,9 +174,16 @@ final class RedisNativeClient implements CacheClientInterface
     public function pipeline(callable $callback): ?array
     {
         return $this->execute(function ($redis) use ($callback) {
-            $pipe = $this->isPhpRedis ? $redis->multi(\Redis::PIPELINE) : $redis->pipeline();
-            $callback($pipe);
-            return $pipe->exec();
+            if ($this->isPhpRedis) {
+                $pipe = $redis->multi(\Redis::PIPELINE);
+                $callback($pipe);
+                return $pipe->exec();
+            }
+    
+            // Predis mode
+            return $redis->pipeline(function ($pipe) use ($callback) {
+                $callback($pipe);
+            });
         });
     }
 }
