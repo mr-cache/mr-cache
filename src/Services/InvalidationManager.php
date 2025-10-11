@@ -78,6 +78,8 @@ final class InvalidationManager implements InvalidationInterface
 
         if (!empty($queryKeys)) {
             $this->deleteQueryKeysAtomically(...$queryKeys);
+        } else {
+            $this->invalidateGeneralQueries($table);
         }
 
         // The query keys are gone, so the index set can be removed.
