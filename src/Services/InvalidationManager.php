@@ -84,6 +84,10 @@ final class InvalidationManager implements InvalidationInterface
         $this->client->del($rowIndexKey);
     }
     
+    /**
+    *
+    * Invalidates all general queries.
+    */
     public function invalidateGeneralQueries(string $table): void 
     {
         $theSet = $this->keyGenerator->generateMultiRowsIndexKey($table);

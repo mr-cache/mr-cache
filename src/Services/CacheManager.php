@@ -78,6 +78,10 @@ final class CacheManager
         return $results;
     }
     
+    /**
+     * @version: 3.0.0
+     * Checks if query is general
+     */
     private function isGeneralQuery(Builder $builder): bool 
     {
         $wheres = $builder->getQuery()->wheres ?? [];
@@ -97,6 +101,10 @@ final class CacheManager
         return !$hasPrimaryOrUnique;
     }
     
+    /**
+     * @version: 3.0.0
+     * Remembers general queries.
+     */
     private function rememberGeneralQuery(string $table, string $queryKey)
     {
         $keyOfSet = $this->keyGenerator->generateMultiRowsIndexKey($table);
