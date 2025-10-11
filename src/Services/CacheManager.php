@@ -82,23 +82,26 @@ final class CacheManager
      * @version: 3.0.0
      * Checks if query is general
      */
-    private function isGeneralQuery(Builder $builder): bool 
+    private function isGeneralQuery($builderOrModel): bool 
     {
-        $wheres = $builder->getQuery()->wheres ?? [];
-        
-        $columns = [];
-        
-        foreach ($wheres as $where) {
-            if (isset($where['column'])) {
-                $columns[] = $where['column'];
-            }
+        if ($builderOrModel instanceof \Illuminate\Database\Eloquent\Model) {
+            return false;
         }
-
-        $primaryKey = $builder->getModel()->getKeyName();
-
-        $hasPrimaryOrUnique = in_array($primaryKey, $columns);
-        
-        return !$hasPrimaryOrUnique;
+    
+        if (!($builderOrModel instanceof Builder)) {
+            return true;
+        }
+    
+        $sql = $builderOrModel->toSql();
+        $primaryKey = $builderOrModel->getModel()->getKeyName();
+    
+        $pattern = '/\b' . preg_quote($primaryKey, '/') . '\b/i';
+    
+        if (preg_match($pattern, $sql)) {
+            return false; 
+        }
+    
+        return true;
     }
     
     /**
