@@ -90,7 +90,7 @@ final class InvalidationManager implements InvalidationInterface
         $queryKeys = $this->client->sMembers($theSet);
         
         if (!empty($queryKeys)) {
-            $this->deleteQueryKeysAtomically(...$queryKeys);
+            $this->client->del(...$queryKeys);
         }
         
         $this->client->del($theSet);
