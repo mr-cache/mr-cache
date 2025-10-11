@@ -90,10 +90,9 @@ final class CacheManager
             }
         }
 
-        $primaryKey = $this->getKeyName();
-        $uniqueKeys = $this->uniqueKeys ?? [];
+        $primaryKey = $builder->getModel()->getKeyName();
 
-        $hasPrimaryOrUnique = in_array($primaryKey, $columns) || !empty(array_intersect($uniqueKeys, $columns));
+        $hasPrimaryOrUnique = in_array($primaryKey, $columns);
         
         return !$hasPrimaryOrUnique;
     }
