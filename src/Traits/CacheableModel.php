@@ -36,6 +36,7 @@ trait CacheableModel
 
         static::saved(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
             $invalidator->invalidateRow($model->getTable(), $model->getKey());
+            $invalidator->invalidateGeneralQueries($model->getTable());
         });
         
         static::created(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
@@ -44,6 +45,7 @@ trait CacheableModel
 
         static::deleted(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
             $invalidator->invalidateRow($model->getTable(), $model->getKey());
+            $invalidator->invalidateGeneralQueries($model->getTable());
 
             $reflection = new \ReflectionClass($model);
             $methods = $reflection->getMethods(\ReflectionMethod::IS_PUBLIC);
