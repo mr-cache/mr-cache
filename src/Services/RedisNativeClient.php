@@ -186,4 +186,39 @@ final class RedisNativeClient implements CacheClientInterface
             });
         });
     }
+    
+        /**
+     * Retrieves the TTL (time to live) of a given key in seconds.
+     *
+     * @param string $key
+     * @return int|null Returns TTL in seconds, -1 if key has no TTL, null if key doesn't exist or Redis unavailable.
+     */
+    public function getTtl(string $key): ?int
+    {
+        return $this->execute(function ($redis) use ($key) {
+            $ttl = $this->isPhpRedis ? $redis->ttl($key) : $redis->ttl($key);
+
+            // PhpRedis & Predis: 
+            // -1 = key exists but has no TTL
+            // -2 = key does not exist
+            return $ttl >= 0 || $ttl === -1 ? $ttl : null;
+        });
+    }
+
+    /**
+     * Sets or updates the TTL of a given key.
+     *
+     * @param string $key
+     * @param int $ttl Time to live in seconds
+     * @return bool Returns true on success, false otherwise
+     */
+    public function expire(string $key, int $ttl): bool
+    {
+        return (bool) $this->execute(function ($redis) use ($key, $ttl) {
+            if ($this->isPhpRedis) {
+                return $redis->expire($key, $ttl);
+            }
+            return $redis->expire($key, $ttl);
+        });
+    }
 }

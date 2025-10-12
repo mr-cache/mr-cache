@@ -262,6 +262,7 @@ final class CacheManager
         ]);
 
         $ttl = $this->determineTtl($builder);
+        $ttlOfSet = $this->getSetTTL($builder);
 
         $this->client->pipeline(function ($pipe) use ($queryKey, $payload, $ttl, $table, $primaryKeys) {
             $ttl > 0 ? $pipe->setex($queryKey, $ttl, $payload) : $pipe->set($queryKey, $payload);
@@ -269,16 +270,49 @@ final class CacheManager
             $tableIndexKey = $this->keyGenerator->generateTableIndexKey($table);
             $pipe->sAdd($tableIndexKey, $queryKey);
 
+            $rowIndexKey = null;
+            
             foreach ($primaryKeys as $pk) {
                 $rowIndexKey = $this->keyGenerator->generateRowIndexKey($table, $pk);
                 $pipe->sAdd($rowIndexKey, $queryKey);
             }
         });
         
+        foreach ($primaryKeys as $pk) {
+            $rowIndexKey = $this->keyGenerator->generateRowIndexKey($table, $pk);
+            if ($rowIndexKey) {
+                $currentTtl = $this->client->getTtl($rowIndexKey);
+                if (! $currentTtl || $currentTtl === -1) {
+                    $this->client->expire($rowIndexKey, $ttlOfSet);
+                } else if ($currentTtl < $ttlOfSet) {
+                    $this->client->expire($rowIndexKey, $ttlOfSet);
+                }
+            }
+        }
+        
         if (! $this->isSingleRowByPK($builder)) {
             $this->rememberGeneralQuery($table, $queryKey);
         }
         
+    }
+    
+    private function getSetTTL(Builder $builder): int
+    {
+        $biggestTTL = 0;
+        
+        if (property_exists($builder, 'mrcache_custom_ttl')) {
+            $biggestTTL = (int) $builder->mrcache_custom_ttl;
+        }
+        
+        if (method_exists($builder->getModel(), 'getCacheTTL')) {
+            if ( (int) $builder->getModel()->getCacheTTL() > $biggestTTL) {
+                $biggestTTL =  (int) $builder->getModel()->getCacheTTL();
+            }
+        } else if ($this->defaultTtl > $biggestTTL) {
+            $biggestTTL = $this->defaultTtl;
+        }
+        
+        return $biggestTTL;
     }
 
     private function determineTtl(Builder $builder): int
