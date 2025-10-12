@@ -24,7 +24,12 @@ trait CacheableModel
      *
      * @var int|null
      */
-    protected ?int $cacheTTL = null;
+    
+    // protected ?int $cacheTTL = null;
+    
+    // protected array $independentKeys = [];
+    
+    // protected array $compositeKeys = [];
 
     /**
      * Boot the trait.
@@ -161,6 +166,10 @@ trait CacheableModel
      */
     public function getCacheTTL(): ?int
     {
+        if (! isset($this->cacheTTL) ) {
+            return null;
+        }
+        
         return $this->cacheTTL;
     }
 }

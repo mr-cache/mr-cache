@@ -7,6 +7,31 @@ An advanced, native Redis caching layer for PHP frameworks Eloquent queries, byp
 
 ---
 
+### 1. Introduction
+"The difference between an ultra-fast MySQL database and one with mediocre performance often lies in the efficiency of its query cache management. Haphazard management can turn this feature into an obstacle.
+​MrCache offers the optimal solution to this equation: an intelligent and automated management system that restores the power of your cache and ensures you get the most out of every query. Benefit from the power of smart automation, while retaining the ability to customize everything to fit your vision."
+
+Most libraries that offer a caching layer for database queries—especially in the **PHP** environment, including for the **Laravel** framework—treat the cache like a naive notebook: they save a query to memory the first time it's called, then wipe everything clean at the first modification to the table! Update a row? Delete a record? Add new data? No problem, let's just drop the entire cache!
+But what's the point then? A database isn't just for reading; it's also for writing and modifying. The result is that the cache becomes a temporary visitor that doesn't live for more than a few moments, offering no real benefit. 
+Instead, it adds overhead to the system with repeated write and delete operations. 
+Worse yet, some of these libraries don't even give you the simplest forms of control—like setting a key's Time-To-Live (TTL). Why? **Because it makes no difference as long as the cache is constantly being cleared.**
+
+This is where **MrCache** emerges as a mature exception in this landscape. 
+It doesn't handle caching randomly but with intelligent management that understands the difference between data that has actually changed and data that hasn't been touched.
+When reading, **MrCache** first checks if the data exists in the cache:
+- If it exists, it's returned immediately without any additional query to the database.
+- If it doesn't exist, it acts intelligently:
+- If the database returns no results, it stores nothing in the cache. An empty cache is a useless burden.
+- If results are found, it checks if the query relies on the Primary Key to determine whether the result pertains to a single row or multiple rows.
+- If the result is for a single row, it's stored in the unique rows section.
+- If it's a general query, it's stored in the general queries section.
+When write operations occur, the real magic begins:
+- If a specific row is modified via its Primary Key, only the cache for that specific row is invalidated—nothing more.
+- If the modification affects more than one row, only the cache related to those rows is invalidated without touching others.
+- If a new row is added, **MrCache** only invalidates general queries to update their results on subsequent calls.
+With this approach, **MrCache** maintains a delicate balance: the cached data remains constantly synchronized with the database without excessive invalidation or wasted memory. 
+It's not just a caching intermediary but an intelligent cache management system designed specifically for MySQL queries—where performance is not sacrificed for accuracy, nor is accuracy lost in the name of speed.
+
 ### 1. Goal
 
 MrCache provides an automatic, highly configurable caching layer for your Eloquent models. It's designed to be "plug-and-play" with intelligent, granular cache invalidation. All queries are cached by default, giving you immediate performance gains.
