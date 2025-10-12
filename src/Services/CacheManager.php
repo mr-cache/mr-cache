@@ -104,6 +104,131 @@ final class CacheManager
         return true;
     }
     
+    private function isSingleRowByPK($builderOrModel): bool
+    {
+        $primaryKey = $builderOrModel->getModel()->getKeyName();
+        $sql = $builderOrModel->toSql();
+        $s = $sql;
+        $len = strlen($s);
+    
+        $s = preg_replace('#/\*.*?\*/#s', ' ', $s);
+        $s = preg_replace('/--.*(\r?\n|$)/', ' ', $s);
+    
+        $inSingle = $inDouble = $inBacktick = false;
+        $depth = 0;
+    
+        $findTopKeyword = function(string $kw, int $start = 0) use ($s, $len) {
+            $kwLow = strtolower($kw);
+            $inSingle = $inDouble = $inBacktick = false;
+            $depth = 0;
+            for ($i = $start; $i < $len; $i++) {
+                $ch = $s[$i];
+                if (!$inDouble && !$inBacktick && $ch === "'") {
+                    if ($inSingle && ($i + 1 < $len) && $s[$i+1] === "'") { $i++; continue; }
+                    $inSingle = !$inSingle; continue;
+                }
+                if (!$inSingle && !$inBacktick && $ch === '"') {
+                    if ($inDouble && ($i + 1 < $len) && $s[$i+1] === '"') { $i++; continue; }
+                    $inDouble = !$inDouble; continue;
+                }
+                if (!$inSingle && !$inDouble && $ch === '`') { $inBacktick = !$inBacktick; continue; }
+    
+                if (!$inSingle && !$inDouble && !$inBacktick) {
+                    if ($ch === '(') { $depth++; continue; }
+                    if ($ch === ')') { if ($depth>0) $depth--; continue; }
+                }
+    
+                if (!$inSingle && !$inDouble && !$inBacktick && $depth === 0) {
+                    $lenKw = strlen($kwLow);
+                    $segment = strtolower(substr($s, $i, $lenKw));
+                    if ($segment === $kwLow) {
+                        $before = ($i === 0) ? ' ' : $s[$i-1];
+                        $after = ($i + $lenKw < $len) ? $s[$i + $lenKw] : ' ';
+                        if (!preg_match('/[A-Za-z0-9_`]/', $before) && !preg_match('/[A-Za-z0-9_`]/', $after)) {
+                            return $i;
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+    
+        $selectPos = $findTopKeyword('select', 0);
+        if ($selectPos === null) return false;
+    
+        $fromPos = $findTopKeyword('from', $selectPos + 6);
+        if ($fromPos === null) $fromPos = $len;
+    
+    
+        $hasJoin = $findTopKeyword('join', $fromPos) !== null;
+        $hasGroup = $findTopKeyword('group', $fromPos) !== null;
+        $hasHaving = $findTopKeyword('having', $fromPos) !== null;
+        $hasDistinct = preg_match('/\bselect\s+distinct\b/i', $s) === 1;
+        $hasUnion = $findTopKeyword('union', 0) !== null;
+    
+        if ($hasUnion || $hasGroup || $hasHaving || $hasDistinct) {
+            $selectList = substr($s, $selectPos + 6, max(0, $fromPos - ($selectPos + 6)));
+            if (preg_match('/\b(count|sum|avg|min|max)\s*\(/i', $selectList) && !$hasGroup) {
+                return true;
+            }
+            return false;
+        }
+    
+        if ($hasJoin) {
+            return false;
+        }
+    
+    
+        $wherePos = $findTopKeyword('where', $fromPos);
+        if ($wherePos === null) {
+            return false;
+        }
+    
+        $endPos = $len;
+        $endKeywords = ['group','having','order','limit','union'];
+        foreach ($endKeywords as $kw) {
+            $p = $findTopKeyword($kw, $wherePos + 5);
+            if ($p !== null && $p < $endPos) $endPos = $p;
+        }
+        $whereStr = substr($s, $wherePos + 5, $endPos - ($wherePos + 5));
+    
+        $pk = preg_quote($primaryKey, '/');
+    
+        if (preg_match("/(?<![A-Za-z0-9_`\\.])([A-Za-z0-9_`\\.]+)\\s*=\\s*([^\\s)]+)/i", $whereStr, $m)) {
+            $identifier = $m[1];
+            $parts = preg_split('/\\./', $identifier);
+            $last = trim(end($parts), "`\" \t\n\r");
+            if (strcasecmp($last, $primaryKey) === 0) {
+                return true;
+            }
+        }
+    
+        if (preg_match_all("/(?<![A-Za-z0-9_`\\.])([A-Za-z0-9_`\\.]+)\\s+IN\\s*\\(([^\\)]*)\\)/i", $whereStr, $ins, PREG_SET_ORDER)) {
+            foreach ($ins as $entry) {
+                $identifier = $entry[1];
+                $content = trim($entry[2]);
+                $parts = preg_split('/\\./', $identifier);
+                $last = trim(end($parts), "`\" \t\n\r");
+                if (strcasecmp($last, $primaryKey) === 0) {
+                    $items = preg_split("/,(?=(?:[^']*'[^']*')*[^']*\$)/", $content);
+                    $nonEmpty = array_filter(array_map('trim', $items), fn($v)=>$v !== '');
+                    if (count($nonEmpty) === 1) return true;
+                }
+            }
+        }
+    
+        if (preg_match("/([A-Za-z0-9_`\\.]+)\\s+BETWEEN\\s+([^\\s]+)\\s+AND\\s+([^\\s]+)/i", $whereStr, $b)) {
+            $identifier = $b[1]; $v1 = $b[2]; $v2 = $b[3];
+            $parts = preg_split('/\\./', $identifier);
+            $last = trim(end($parts), "`\" \t\n\r");
+            if (strcasecmp($last, $primaryKey) === 0) {
+                if ($v1 === $v2) return true;
+            }
+        }
+    
+        return false;
+    }
+    
     /**
      * @version: 3.0.0
      * Remembers general queries.
@@ -150,7 +275,7 @@ final class CacheManager
             }
         });
         
-        if ($this->isGeneralQuery($builder)) {
+        if (! $this->isSingleRowByPK($builder)) {
             $this->rememberGeneralQuery($table, $queryKey);
         }
         

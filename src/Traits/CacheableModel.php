@@ -25,7 +25,7 @@ trait CacheableModel
      * @var int|null
      */
     
-    // protected ?int $cacheTTL = null;
+    protected ?int $cacheTTL = null;
     
     // protected array $independentKeys = [];
     
