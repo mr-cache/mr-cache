@@ -16,6 +16,8 @@ use MrCache\Services\CacheManager;
 use MrCache\Services\InvalidationManager;
 use MrCache\Services\KeyGenerator;
 use MrCache\Services\RedisNativeClient;
+use MrCache\Services\QueryColumnMatcher;
+
 
 class MrCacheServiceProvider extends ServiceProvider
 {
@@ -47,6 +49,7 @@ class MrCacheServiceProvider extends ServiceProvider
             return new CacheManager(
                 $app->make(CacheClientInterface::class),
                 $app->make(KeyGeneratorInterface::class),
+                app(QueryColumnMatcher::class),
                 $app['config']['mrcache']
             );
         });
