@@ -45,6 +45,13 @@ trait CacheableModel
         
         static::created(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
             $invalidator->invalidateGeneralQueries($model->getTable());
+            if ($model->isContaintIKs()) {
+                $row = $model->toArray();
+                $ik = $model->getIndependentKeys();
+                if (array_key_exists($ik[0], $row)) {
+                    $invalidator->invalidateIKQueries($model->getTable(), $ik[0], $row[$ik[0]]);
+                }
+            }
         });
 
         static::deleted(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {

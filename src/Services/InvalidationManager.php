@@ -99,6 +99,18 @@ final class InvalidationManager implements InvalidationInterface
         
         $this->client->del($theSet);
     }
+    
+    public function invalidateIKQueries(string $table, string $ikName, string $ikValue): void 
+    {
+        $theSet = $this->keyGenerator->generateIKIndexKey($table, $ikName, $ikValue);
+        $queryKeys = $this->client->sMembers($theSet);
+        
+        if (!empty($queryKeys)) {
+            $this->client->del(...$queryKeys);
+        }
+        
+        $this->client->del($theSet);
+    }
 
     /**
      * {@inheritdoc}
