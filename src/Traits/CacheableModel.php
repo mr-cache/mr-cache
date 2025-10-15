@@ -172,5 +172,37 @@ trait CacheableModel
         
         return $this->cacheTTL;
     }
+    
+    /**
+     * @version: 4.x
+     */
+    final public function getIndependentKeys(): array 
+    {
+        if (! isset($this->independentKeys) || ! is_array($this->independentKeys) ) {
+            return [];
+        }
+        
+        return $this->independentKeys;
+    }
+
+    /**
+     * @version: 4.x
+     */
+    final public function getCompositeKeys(): array 
+    {
+        if (! isset($this->compositeKeys) || ! is_array($this->compositeKeys) ) {
+            return [];
+        }
+        
+        return $this->compositeKeys;
+    }
+
+    /**
+     * @version: 4.x
+     */
+    final public function isContaintIKs(): bool 
+    {
+        return count($this->getIndependentKeys()) > 0;
+    }
 }
 

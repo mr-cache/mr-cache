@@ -24,6 +24,7 @@ final class CacheManager
     public function __construct(
         private readonly CacheClientInterface $client,
         private readonly KeyGeneratorInterface $keyGenerator,
+        private readonly QueryColumnMatcher $queryColumnMatcher,
         private readonly array $config
     ) {
         $this->storeMetrics = $config['store_metrics'] ?? false;
@@ -239,6 +240,51 @@ final class CacheManager
         $this->client->pipeline(function ($pipe) use ($keyOfSet, $queryKey) {
             $pipe->sAdd($keyOfSet, $queryKey);
         });
+    }
+    
+    private function rememberIKQuery(Builder $builder, string $queryKey, Collection $results): void
+    {
+        $independentKeys = $builder->getModel()->getIndependentKeys();
+        $iKeys = $results->pluck($independentKeys[0])->unique()->filter()->all();
+        
+        foreach ($iKeys as $ik) {
+            $ikIndex = $this->keyGenerator->generateIKIndexKey(
+                table: $builder->getModel()->getTable(),
+                ikName: $independentKeys[0],
+                ikValue: $ik
+            );
+            
+            $this->client->pipeline(function ($pipe) use($queryKey, $ikIndex) {
+                $pipe->sAdd($ikIndex, $queryKey);
+            });
+            
+            $this->putTtl($builder, $ikIndex);
+        }
+    }
+    
+    private function putTtl(Builder $builder, string $cacheKey): void 
+    {
+        $ttlOfSet   = $this->getSetTTL($builder);
+        $currentTtl = $this->client->getTtl($cacheKey);
+        
+        if (! $currentTtl || $currentTtl === -1) {
+            $this->client->expire($cacheKey, $ttlOfSet);
+        } else if ($currentTtl < $ttlOfSet) {
+            $this->client->expire($cacheKey, $ttlOfSet);
+        }
+    }
+    
+    private function containsIK($builder, $results): bool
+    {
+        if ($builder->getModel()->isContaintIKs() == false) {
+            return false;
+        }
+        
+        $sql = $builder->toSql();
+        $IK = $builder->getModel()->getIndependentKeys();
+        
+        return $this->queryColumnMatcher->matches($sql, $IK);
+        // return $this->isByIndependentKeys()
     }
 
     /**
