@@ -336,6 +336,11 @@ final class CacheManager
             }
         }
         
+        if ($this->containsIK($builder, $results)) {
+            $this->rememberIKQuery($builder, $queryKey, $results);
+            return;
+        }
+        
         if (! $this->isSingleRowByPK($builder)) {
             $this->rememberGeneralQuery($table, $queryKey);
         }

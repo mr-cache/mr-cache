@@ -40,6 +40,11 @@ final class KeyGenerator implements KeyGeneratorInterface
         return "{$this->prefix}:rowindex:table:{$table}:pk:{$primaryKey}";
     }
     
+    public function generateIKIndexKey(string $table, string $ikName, string $ikValue): string
+    {
+        return "{$this->prefix}:ikindex:table:{$table}:ik:{$ikName}={$ikValue}";
+    }
+    
     public function generateMultiRowsIndexKey(string $table): string
     {
         return "{$this->prefix}:multirowsindex:table:{$table}";
