@@ -262,6 +262,41 @@ final class CacheManager
         }
     }
     
+    private function rememberIndexesQuery(Builder $builder, string $queryKey, Collection $results): bool
+    {
+        $indexes = $builder->getModel()->getIndexes();
+        
+        $remembered = false;
+        
+        foreach ($indexes as $index) {
+            if (! $this->queryColumnMatcher->matches($builder->toSql(), $index) ) {
+                continue;
+            }
+            
+            $indexKeys = $results
+                ->map(fn($item) => collect($index)->mapWithKeys(fn($key) => [$key => $item[$key]]))
+                ->unique(fn($item) => md5(json_encode($item)))
+                ->values()
+                ->all();
+            
+            foreach ($indexKeys as $indexKey) {
+                $indexCacheKey = $this->keyGenerator->generateCustomedIndexesKey($indexKey->toArray());
+                
+                $this->client->pipeline(function ($pipe) use($queryKey, $indexCacheKey) {
+                    $pipe->sAdd($indexCacheKey, $queryKey);
+                });
+                
+                $this->putTtl($builder, $indexCacheKey);
+            }
+            
+            if (! $remembered) {
+                $remembered = true;
+            }
+        }
+        
+        return $remembered;
+    }
+    
     private function putTtl(Builder $builder, string $cacheKey): void 
     {
         $ttlOfSet   = $this->getSetTTL($builder);
@@ -334,6 +369,10 @@ final class CacheManager
                     $this->client->expire($rowIndexKey, $ttlOfSet);
                 }
             }
+        }
+        
+        if ($this->rememberIndexesQuery($builder, $queryKey, $results)) {
+            return;
         }
         
         if ($this->containsIK($builder, $results)) {

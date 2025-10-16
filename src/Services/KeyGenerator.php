@@ -29,6 +29,19 @@ final class KeyGenerator implements KeyGeneratorInterface
         $hash = hash($this->hashAlgo, $canonical);
         return "{$this->prefix}:query:{$hash}";
     }
+    
+    public function generateCustomedIndexesKey(array $indexes): string
+    {
+        $key = $this->prefix;
+        foreach ($indexes as $k => $v) {
+            if (! $v) {
+                continue;
+            }
+            $key .= ":{$k}={$v}";
+        }
+        
+        return $key;
+    }
 
     public function generateTableIndexKey(string $table): string
     {
@@ -40,6 +53,7 @@ final class KeyGenerator implements KeyGeneratorInterface
         return "{$this->prefix}:rowindex:table:{$table}:pk:{$primaryKey}";
     }
     
+    /** @Deprecated */
     public function generateIKIndexKey(string $table, string $ikName, string $ikValue): string
     {
         return "{$this->prefix}:ikindex:table:{$table}:ik:{$ikName}={$ikValue}";

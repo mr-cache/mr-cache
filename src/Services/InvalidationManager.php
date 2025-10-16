@@ -111,6 +111,18 @@ final class InvalidationManager implements InvalidationInterface
         
         $this->client->del($theSet);
     }
+    
+    public function invalidateIndexesQueries(string $table, array $indexes): void 
+    {
+        $theSet = $this->keyGenerator->generateCustomedIndexesKey($indexes);
+        $queryKeys = $this->client->sMembers($theSet);
+        
+        if (!empty($queryKeys)) {
+            $this->client->del(...$queryKeys);
+        }
+        
+        $this->client->del($theSet);
+    }
 
     /**
      * {@inheritdoc}

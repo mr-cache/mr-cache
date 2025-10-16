@@ -25,7 +25,7 @@ trait CacheableModel
      * @var int|null
      */
     
-    protected ?int $cacheTTL = null;
+    // protected ?int $cacheTTL = null;
     
     // protected array $independentKeys = [];
     
@@ -52,6 +52,19 @@ trait CacheableModel
                     $invalidator->invalidateIKQueries($model->getTable(), $ik[0], $row[$ik[0]]);
                 }
             }
+            
+            if ($model->containsIndexes()) {
+                foreach ($model->getIndexes() as $index) {
+                    $indexKeys = collect([$model->toArray()])
+                        ->map(fn($item) => collect($index)->mapWithKeys(fn($key) => [$key => $item[$key]]))
+                        ->unique(fn($item) => md5(json_encode($item)))
+                        ->values()
+                        ->all();
+    
+                    $invalidator->invalidateIndexesQueries($model->getTable(), $indexKeys[0]->toArray());
+                }
+            }
+            
         });
 
         static::deleted(function (\Illuminate\Database\Eloquent\Model $model) use ($invalidator) {
@@ -210,6 +223,20 @@ trait CacheableModel
     final public function isContaintIKs(): bool 
     {
         return count($this->getIndependentKeys()) > 0;
+    }
+    
+    final public function getIndexes(): array
+    {
+        if (! isset($this->indexes) || ! is_array($this->indexes) ) {
+            return [];
+        }
+        
+        return $this->indexes;
+    }
+    
+    final public function containsIndexes(): bool 
+    {
+        return count($this->getIndexes()) > 0;
     }
 }
 

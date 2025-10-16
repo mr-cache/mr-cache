@@ -64,10 +64,13 @@ This will create a `config/mrcache.php` file where you can configure Redis conne
        use CacheableModel;
 
        // Optional: Define a model-specific TTL in seconds
-       public function getCacheTTL(): int
-       {
-           return 3600; // 1 hour
-       }
+       protected $cacheTTL = 3600; // 1 hour
+       
+       // Optional: Define indexes
+       protected $indexes = [
+           ['col1'], // Single index
+           ['col1', 'col2'], // Multiple index
+       ];
    }
    ```
 
