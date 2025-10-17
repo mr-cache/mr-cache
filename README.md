@@ -7,7 +7,7 @@ An advanced, native Redis caching layer for PHP frameworks Eloquent queries, byp
 [![Total Downloads](https://img.shields.io/packagist/dt/mrcache/mrcache.svg?style=flat-square)](https://packagist.org/packages/mrcache/mrcache)
 
 ---
-
+[عرض التوثيق العربي](README_AR.md)
 ### 1. Introduction
 "The difference between an ultra-fast MySQL database and one with mediocre performance often lies in the efficiency of its query cache management. Haphazard management can turn this feature into an obstacle.
 ​MrCache offers the optimal solution to this equation: an intelligent and automated management system that restores the power of your cache and ensures you get the most out of every query. Benefit from the power of smart automation, while retaining the ability to customize everything to fit your vision."
