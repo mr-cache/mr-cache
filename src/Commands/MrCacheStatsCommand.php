@@ -33,9 +33,11 @@ class MrCacheStatsCommand extends Command
 
         $info = $client->info('keyspace');
         $dbName = 'db' . config('mrcache.redis.database', 0);
-        $keyspaceInfo = $info[$dbName] ?? null;
+        $keyspaceInfo = $info[$dbName] ?? $info['Keyspace'][$dbName] ?? null;
         $totalKeys = 'N/A';
-        if ($keyspaceInfo && is_string($keyspaceInfo)) {
+        if (is_array($keyspaceInfo)) {
+            $totalKeys = $keyspaceInfo['keys'] ?? 'N/A';
+        } elseif (is_string($keyspaceInfo)) {
              parse_str(str_replace(',', '&', $keyspaceInfo), $output);
              $totalKeys = $output['keys'] ?? 'N/A';
         }

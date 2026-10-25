@@ -1,39 +1,75 @@
-name: PHP Composer
+name: Laravel compatibility and Redis tests
 
-on:
-  push:
-    branches: [ "dev-3.x" ]
-  pull_request:
-    branches: [ "dev-3.x" ]
+on: [push, pull_request, workflow_dispatch]
 
 permissions:
   contents: read
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {php: '8.1', laravel: '10', testbench: '^8.0', phpunit: '^10.5', legacy: true}
+          - {php: '8.3', laravel: '10', testbench: '^8.0', phpunit: '^10.5', legacy: true}
+          - {php: '8.2', laravel: '11', testbench: '^9.0', phpunit: '^11.0', legacy: true}
+          - {php: '8.4', laravel: '11', testbench: '^9.0', phpunit: '^11.0', legacy: true}
+          - {php: '8.2', laravel: '12', testbench: '^10.0', phpunit: '^11.0', legacy: false}
+          - {php: '8.5', laravel: '12', testbench: '^10.0', phpunit: '^11.0', legacy: false}
+          - {php: '8.3', laravel: '13', testbench: '^11.0', phpunit: '^11.0', legacy: false}
+          - {php: '8.5', laravel: '13', testbench: '^11.0', phpunit: '^11.0', legacy: false}
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Validate composer.json and composer.lock
-      run: composer validate --strict
-
-    - name: Cache Composer packages
-      id: composer-cache
-      uses: actions/cache@v3
-      with:
-        path: vendor
-        key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-php-
-
-    - name: Install dependencies
-      run: composer install --prefer-dist --no-progress
-
-    # Add a test script to composer.json, for instance: "test": "vendor/bin/phpunit"
-    # Docs: https://getcomposer.org/doc/articles/scripts.md
-
-    # - name: Run test suite
-    #   run: composer run-script test
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, pdo_sqlite, redis, pcntl
+          coverage: none
+          tools: composer:v2
+      - run: composer validate --strict
+      - name: Select framework test harness
+        run: composer require --dev 'laravel/framework:${{ matrix.laravel }}.*' 'orchestra/testbench:${{ matrix.testbench }}' 'phpunit/phpunit:${{ matrix.phpunit }}' --no-update --no-interaction
+      - name: Install current framework dependencies
+        if: ${{ !matrix.legacy }}
+        run: composer update --prefer-dist --no-interaction --no-progress
+      - name: Install isolated legacy compatibility dependencies
+        if: matrix.legacy
+        run: |
+          echo '::warning::Legacy Laravel compatibility testing permits upstream advisories in this disposable job only. Audit findings remain visible; no package advisory policy is disabled.'
+          composer update --prefer-dist --no-interaction --no-progress --no-blocking
+      - name: Dependency audit (legacy findings are reported, not hidden)
+        continue-on-error: ${{ matrix.legacy }}
+        run: composer audit --format=plain
+      - run: composer lint
+      - name: Start disposable TLS and ACL Redis
+        run: |
+          bash tests/Support/tls-fixture.sh "$RUNNER_TEMP/mrcache-tls"
+          docker run -d --name mrcache-tls --user "$(id -u):$(id -g)" -p 127.0.0.1:16390:16390 -v "$RUNNER_TEMP/mrcache-tls:/tls:ro" redis:7.4-alpine redis-server --port 0 --tls-port 16390 --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no --aclfile /tls/acl.conf --save '' --appendonly no
+          echo "MRCACHE_TEST_TLS_CA=$RUNNER_TEMP/mrcache-tls/ca.crt" >> "$GITHUB_ENV"
+          echo "MRCACHE_TEST_TLS_PASSWORD_FILE=$RUNNER_TEMP/mrcache-tls/password" >> "$GITHUB_ENV"
+      - name: Test Predis and verified TLS
+        run: composer test -- --fail-on-warning --fail-on-deprecation
+        env:
+          MRCACHE_TEST_REDIS_PORT: '6379'
+          MRCACHE_TEST_TLS_PORT: '16390'
+          MRCACHE_TEST_REDIS_CLIENT: predis
+      - name: Test phpredis and verified TLS
+        run: composer test -- --fail-on-warning --fail-on-deprecation
+        env:
+          MRCACHE_TEST_REDIS_PORT: '6379'
+          MRCACHE_TEST_TLS_PORT: '16390'
+          MRCACHE_TEST_REDIS_CLIENT: phpredis
+      - name: Stop disposable TLS service
+        if: always()
+        run: docker rm -f mrcache-tls || true

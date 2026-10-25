@@ -25,7 +25,9 @@ final class EloquentCacheMacros
     {
         return function () {
             /** @var Builder $this */
-            $this->mrcache_without_caching = true;
+            if ($this instanceof \MrCache\Services\CacheBuilder) {
+                $this->mrcache_without_caching = true;
+            }
             return $this;
         };
     }
@@ -40,7 +42,12 @@ final class EloquentCacheMacros
     {
         return function (int $seconds) {
             /** @var Builder $this */
-            $this->mrcache_custom_ttl = max(0, $seconds);
+            if ($seconds < 0 || $seconds > 2147483647) {
+                throw new \InvalidArgumentException('MrCache TTL must be between 0 and 2147483647 seconds.');
+            }
+            if ($this instanceof \MrCache\Services\CacheBuilder) {
+                $this->mrcache_custom_ttl = $seconds;
+            }
             return $this;
         };
     }
@@ -48,8 +55,7 @@ final class EloquentCacheMacros
     /**
      * A semantic, chainable method to indicate caching is desired.
      *
-     * Since caching is on by default, this has no functional effect but can
-     * improve code readability.
+     * This has no functional effect and does not enable caching.
      *
      * @return \Closure
      */

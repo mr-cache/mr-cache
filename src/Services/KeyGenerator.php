@@ -20,7 +20,10 @@ final class KeyGenerator implements KeyGeneratorInterface
     public function __construct(array $config)
     {
         $this->prefix = $config['prefix'] ?? 'mrcache';
-        $this->hashAlgo = $config['hash_algo'] ?? 'md5';
+        if (!preg_match('/^[A-Za-z0-9:_-]{1,200}$/D', $this->prefix)) {
+            throw new \InvalidArgumentException('MrCache prefix must contain 1-200 letters, digits, colons, underscores or hyphens.');
+        }
+        $this->hashAlgo = 'sha256';
     }
 
     public function generateQueryKey(Builder $builder): string
@@ -84,14 +87,22 @@ final class KeyGenerator implements KeyGeneratorInterface
      */
     private function canonicalize(Builder $builder): string
     {
-        $eagerLoad = $builder->getEagerLoads();
-        ksort($eagerLoad); // Sort relations alphabetically for consistency
-
-        return json_encode([
+        $connection = $builder->getConnection();
+        return serialize([
+            'version' => 3,
+            'context_hash' => $builder->mrcache_context ?? null,
+            'model' => $builder->getModel()::class,
+            'connection' => $connection->getName(),
+            'database' => $connection->getDatabaseName(),
+            'context' => array_intersect_key($connection->getConfig(), array_flip([
+                'driver', 'host', 'port', 'unix_socket', 'username', 'schema', 'search_path',
+                'charset', 'collation', 'prefix', 'timezone', 'read', 'write',
+            ])),
+            'grammar' => $connection->getQueryGrammar()::class,
             'sql' => $builder->toSql(),
+            // PHP serialization is used only for hashing, never unserialized.
+            // It preserves scalar types, binary strings and field boundaries.
             'bindings' => $builder->getBindings(),
-            'relations' => $eagerLoad,
-            // We might add more factors here in the future, e.g., soft-delete status
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        ]);
     }
 }

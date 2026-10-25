@@ -1,223 +1,154 @@
-<div dir="rtl">
+# MrCache
 
-# MrCache لإطارات عمل PHP
+تخزين استعلامات Laravel وEloquent مؤقتاً باستخدام Redis، مع مدد صلاحية وسياسات تخزين وإبطال واضحة.
 
-طبقة تخزين مؤقت (Caching) متقدمة وأصلية باستخدام Redis لاستعلامات Eloquent في بيئات PHP، تتجاوز استخدام واجهة Laravel Cache الافتراضية لتحقيق أقصى أداء وتحكم.
+[English](README.md) · [Packagist](https://packagist.org/packages/mrcache/mrcache) · [ملاحظات الترقية](CHANGELOG.md)
 
-![PHP Tests](https://github.com/mr-cache/mr-cache/actions/workflows/php.yml/badge.svg)  
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/mrcache/mrcache.svg?style=flat-square)](https://packagist.org/packages/mrcache/mrcache)  
-[![Total Downloads](https://img.shields.io/packagist/dt/mrcache/mrcache.svg?style=flat-square)](https://packagist.org/packages/mrcache/mrcache)
+## التوافق
 
----
+| Laravel / Illuminate | الحد الأدنى لـPHP |
+| --- | --- |
+| 10 | 8.1 |
+| 11–12 | 8.2 |
+| 13 | 8.3 |
 
-### 1. المقدمة
-"الفرق بين قاعدة بيانات MySQL فائقة السرعة وأخرى ذات أداء متوسط غالبًا ما يكمن في كفاءة إدارة التخزين المؤقت للاستعلامات. الإدارة العشوائية قد تحوّل هذه الميزة إلى عائق.  
-يوفّر MrCache الحل الأمثل لهذه المعادلة: نظام إدارة ذكي ومؤتمت يستعيد قوة التخزين المؤقت ويضمن أن تحصل على أقصى استفادة من كل استعلام. استفد من قوة الأتمتة الذكية، مع الاحتفاظ بإمكانية تخصيص كل شيء ليناسب رؤيتك."
+تعتمد الحزمة على Predis بالإصدار `^2.0`، وتدعم phpredis اختيارياً. توافق الحزمة لا يمدد الدعم الأمني للإطار؛ راجع تنبيهات الاعتماديات عند استخدام إصدارات قديمة.
 
-معظم المكتبات التي تقدم طبقة تخزين مؤقت لاستعلامات قاعدة البيانات — خصوصًا في بيئة **PHP**، بما في ذلك إطار **Laravel** — تتعامل مع الكاش كدفتر بسيط: تحفظ الاستعلام في المرة الأولى التي يتم استدعاؤه، ثم يقومون بمسح كل شيء عند أول تعديل في الجدول! حدثت صف؟ حذِف سجل؟ أُضيفت بيانات جديدة؟ لا مشكلة، دعنا نمسح الكاش بالكامل!  
-لكن ما الفائدة إذًا؟ قاعدة البيانات ليست للقراءة فقط؛ هي أيضًا للكتابة والتعديل. والنتيجة أن الكاش يصبح زائرًا مؤقتًا لا يدوم أكثر من لحظات معدودة، ولا يقدم فائدة حقيقية. بل يضيف تحميلًا على النظام بعمليات كتابة وحذف متكررة.  
-والأسوأ أن بعض هذه المكتبات لا تمنحك حتى أبسط أشكال التحكم — مثل تعيين وقت انتهاء صلاحية المفتاح (TTL). لماذا؟ **لأنه لا فرق طالما يتم مسح الكاش باستمرار.**
+## التثبيت
 
-هنا يأتي دور **MrCache** كاستثناء ناضج في هذا المشهد.  
-لا يتعامل مع الكاش بعشوائية، بل بإدارة ذكية تفهم الفرق بين البيانات التي تغيّرت فعلاً وتلك التي لم تُمسّ.  
-عند القراءة، يفحص **MrCache** أولًا ما إذا كانت البيانات موجودة في الكاش:
-- إذا كانت موجودة، يتم إرجاعها فورًا دون أي استعلام إضافي إلى قاعدة البيانات.
-- إذا لم تكن موجودة، يتصرف بذكاء:
-  - إذا أعادت قاعدة البيانات بلا نتايج، لا يخزن شيئًا في الكاش. الكاش الفارغ عبء غير مفيد.
-  - إذا وُجدت نتائج، يفحص ما إذا كان الاستعلام يعتمد على المفتاح الأساسي (Primary Key) ليقرر ما إذا كانت النتيجة تخص صفًا واحدًا أو عدة صفوف.
-  - إذا كانت النتيجة لصف واحد، تحفظ في قسم الصفوف الفريد (unique rows).
-  - إذا كان استعلامًا عامًا، تحفظ في قسم الاستعلامات العامة.
-عند حدوث عمليات كتابة تبدأ السحر الحقيقي:
-- إذا تم تعديل صف محدد عبر المفتاح الأساسي، يتم إبطال (invalidate) الكاش الخاص بهذا الصف فقط — ولا شيء أكثر.
-- إذا أثر التعديل على أكثر من صف، يتم إبطال الكاش المتعلق بتلك الصفوف فقط دون المساس بباقي الكاش.
-- إذا أُضيف صف جديد، يقوم **MrCache** فقط بإبطال استعلامات العامة لتحديث نتائجها في الاستدعاءات التالية.
-بهذا النهج يحافظ **MrCache** على توازن دقيق: تبقى البيانات المخزنة متزامنة مع قاعدة البيانات دون إبطال مفرط أو هدر في الذاكرة.  
-ليس مجرد وسيط للتخزين المؤقت بل نظام إدارة كاش ذكي مصمم خصيصًا لاستعلامات MySQL — حيث لا يتم التضحية بالأداء من أجل الدقة، ولا تُفقد الدقة باسم السرعة.
+يوثّق هذا الملف فرع التطوير `5.x`. لتثبيت هذا الفرع:
 
-### 1. الهدف
-
-يوفّر MrCache طبقة تخزين مؤقت أوتوماتيكية قابلة للتكوين بدرجة عالية لنماذج Eloquent الخاصة بك. مصمّم ليكون "وصل وشغّل" مع إبطال كاش ذكي وتفصيلي. جميع الاستعلامات مُخبّأة افتراضيًا، مما يمنحك تحسينات أداء فورية.
-
-### 2. التثبيت
-
-```bash
-composer require mrcache/mrcache
-```
-
-بعدها، انشر ملف الإعدادات:
-
-```bash
+```sh
+composer require mrcache/mrcache:5.x-dev
 php artisan vendor:publish --provider="MrCache\Providers\MrCacheServiceProvider" --tag="mrcache-config"
 ```
 
-سيُنشئ هذا ملف `config/mrcache.php` حيث يمكنك تكوين اتصال Redis، والـ TTL الافتراضي، وإعدادات أخرى.
+لتثبيت إصدار موسوم، استخدم `composer require mrcache/mrcache` واتبع README الخاص بذلك الإصدار.
 
-### 3. البداية السريعة
+اضبط Redis وبادئة مستقلة للتطبيق والبيئة قبل التفعيل:
 
-1. **استخدم السمة (Trait):** أضف السمة `CacheableModel` لأي نموذج Eloquent تريد تخزين استعلاماته مؤقتًا.
-
-   ```php
-   use Illuminate\Database\Eloquent\Model;
-   use MrCache\Traits\CacheableModel;
-
-   class Post extends Model
-   {
-       use CacheableModel;
-
-       // اختياري: تعريف TTL خاص بالنموذج بالثواني
-       protected $cacheTTL = 3600; // ساعة واحدة
-       
-       // اختياري: تعريف الفهارس
-       protected $indexes = [
-           ['col1'], // فهرس مفرد
-           ['col1', 'col2'], // فهرس متعدد
-       ];
-   }
-   ```
-
-2. **وهذا كل شيء!** الآن جميع استعلامات نموذج `Post` مخزّنة تلقائيًا.
-
-   ```php
-   // التشغيل الأول: يستعلم من قاعدة البيانات ويخزن النتيجة.
-   $posts = Post::where('is_published', true)->get();
-
-   // التشغيل الثاني (نفس الاستعلام): يسترجع النتيجة مباشرة من Redis.
-   $posts = Post::where('is_published', true)->get();
-   ```
-
-### 4. الاستخدام المتقدم
-
-#### التحكم لكل استعلام (Per-Query Control)
-
-يمكنك التحكم في سلوك التخزين المؤقت لكل استعلام باستخدام ماكروز سلاسلية (fluent macros).
-
-* **تعطيل الكاش لاستعلام معين:**
-
-  ```php
-  $uncachedPosts = Post::where('live_views', '>', 1000)->withoutCaching()->get();
-  ```
-
-* **تعيين TTL مخصص لاستعلام معين:**
-
-  ```php
-  // خزّن هذه النتيجة لمدة 60 ثانية فقط
-  $breakingNews = Post::latest()->withCustomTTL(60)->first();
-  ```
-
-### 4.2 العلاقات وإبطال الكاش التتابعي (Cascading Invalidation)
-
-يقوم MrCache بإبطال الكاش تلقائيًا للنماذج المرتبطة:
-
-```php
-$author = Author::with('posts')->find(1);
-$author->delete(); // يبطل كاش الكاتب وكل المنشورات المرتبطة به
+```dotenv
+MRCACHE_ENABLED=true
+MRCACHE_PREFIX=myapp_production
+MRCACHE_REDIS_CLIENT=predis
+MRCACHE_REDIS_HOST=127.0.0.1
+MRCACHE_REDIS_PORT=6379
+MRCACHE_TTL=60
 ```
 
-يعمل مع:
+الكاش معطّل افتراضياً. استخدم `php artisan mrcache:doctor` لفحص الاتصال والأوامر المطلوبة.
 
-* `hasOne` / `belongsTo`
-* `hasMany` / `belongsToMany`
-* العلاقات المتداخلة (Nested relationships)
-
-لا حاجة لقائمة يدوية للعلاقات؛ MrCache يفحص نموذج Eloquent تلقائيًا.
-
----
-
-### 4.3 إبطال مشروط للجدول/الصفوف
-
-* التحديثات على صف مفرد تبطل فقط الاستعلامات التي تتضمن ذلك الصف.
-* التحديثات أو الحذف الجماعي عبر شروط where الآن تبطل تلقائيًا الكاش للصفوف المتأثرة فقط.
+## البداية السريعة
 
 ```php
-// يبطل تلقائيًا الكاش لكل الصفوف حيث 'is_archived' = true
-Post::where('is_archived', true)->update(['is_published' => false]);
+use Illuminate\Database\Eloquent\Model;
+use MrCache\Traits\CacheableModel;
 
-// وبالمثل للحذف الجماعي
-Post::where('is_archived', true)->delete();
+class Post extends Model
+{
+    use CacheableModel;
+
+    protected $cacheTTL = 60;
+}
+
+$posts = Post::where('is_published', true)->withCustomTTL(30)->get();
+$fresh = Post::withoutCaching()->find(1);
 ```
-* ✅ لا حاجة لتنظيف الكاش يدويًا للصفوف المتأثرة؛ MrCache يتولى ذلك تلقائيًا.
 
-### 5. قواعد الإبطال (Invalidation Rules)
+أولوية TTL من الأدنى للأعلى: الإعداد العام، ثم مدة النموذج، ثم سياسته المركزية، ثم سياسة الاستعلام، ثم `withCustomTTL()` الصريحة. الصفر يتجاوز التخزين، وتُرفض القيم السالبة أو المتجاوزة للحد.
 
-الإبطال آلي ودقيق.
-
-* **إبطال صف مفرد:** عند تحديث أو حذف مثيل نموذج، تُبطل فقط مدخلات الكاش التي تتضمن ذلك الصف المحدد.
-
-  ```php
-  $post = Post::find(1); // يتم تخزين الكاش تلقائيًا للمنشور #1
-  $post->title = 'New Title';
-  $post->save(); // يبطل تلقائيًا كاش المنشور #1
-  ```
-
-* **إبطال جماعي للصفوف:** التحديثات أو الحذف الجماعي عبر الـ query builder تبطل الآن تلقائيًا الكاش للصفوف المتأثرة فقط.
-
-  ```php
-  // يبطل تلقائيًا كاش لكل الصفوف حيث 'is_archived' = true
-  Post::where('is_archived', true)->update(['is_published' => false]);
-  Post::where('is_archived', true)->delete();
-  ```
-
-* ✅ يضمن MrCache الآن اتساق الكاش لكل الصفوف المتأثرة، بدون حاجة لعمليات تفريغ يدوية.
-
----
-
-## 6. أوامر Artisan
-
-| الأمر                                                    | الوصف                                            |
-| -------------------------------------------------------- | ------------------------------------------------ |
-| `php artisan mrcache:flush`                              | تفريغ كل المخزن المؤقت (flush all cache)         |
-| `php artisan mrcache:flush --model="App\Models\Post"`    | تفريغ الكاش لنموذج/جدول محدد                      |
-| `php artisan mrcache:flush --model="App\Models\Post" --pk=123` | تفريغ صف محدد                              |
-| `php artisan mrcache:stats`                              | عرض إحصاءات (hits/misses) (يتطلب تفعيل القياس)  |
-
----
-
-### 7. الإعداد (`config/mrcache.php`)
+## السياسات والسياق
 
 ```php
-<?php
+$posts = Post::query()->where('tenant_id', $tenantId)
+    ->cacheContext(['tenant' => $tenantId, 'permission_version' => $permissionVersion])
+    ->withCustomTTL(60)->refreshAhead(5)->get();
 
-declare(strict_types=1);
-
-return [
-    'enabled' => env('MRCACHE_ENABLED', true),
-
-    'redis' => [
-        'client'   => env('MRCACHE_REDIS_CLIENT', 'phpredis'),
-        'host'     => env('MRCACHE_REDIS_HOST', '127.0.0.1'),
-        'port'     => env('MRCACHE_REDIS_PORT', 6379),
-        'password' => env('MRCACHE_REDIS_PASSWORD'),
-        'database' => env('MRCACHE_REDIS_DB', 0),
-        'timeout'  => env('MRCACHE_REDIS_TIMEOUT', 1.0),
-    ],
-
-    'prefix' => env('MRCACHE_PREFIX', 'mrcache'),
-
-    'default_ttl' => env('MRCACHE_TTL', 3600),
-
-    'strict_mode' => env('MRCACHE_STRICT_MODE', false),
-
-    'hash_algo' => 'md5',
-
-    'compress_threshold' => env('MRCACHE_COMPRESS_THRESHOLD', 10240),
-
-    'relations_default_depth' => 2,
-
-    'store_metrics' => env('MRCACHE_STORE_METRICS', true),
-];
+$fresh = Post::query()->cacheConsistency('database')->find($id);
+$decision = Post::query()->explainCache();
 ```
 
----
+تعزل `cacheContext()` هوية الكاش، لكنها لا ترشّح الصفوف أو تفرض الصلاحيات. ضمّن شروط المستأجر والتفويض في SQL. يتجاوز وضع `database` الكاش، بينما يعتمد `bounded` على TTL والإبطال المرصود. لا تفعّل `cache()` التخزين وحدها.
 
-## 8. ملاحظات وتوصيات
+تُضبط السياسات المركزية في `mrcache.policies[Model::class]`. تقبل سياسة الاستعلام `ttl` و`consistency` و`max_payload_bytes` و`refresh_ahead_seconds` و`relations`. التجديد المبكر تزامني، وعتبته أقل من TTL، ولا يقدم بيانات منتهية الصلاحية.
 
-* الاستعلامات مثل `count()`، `sum()`، `avg()` **غير مخزّنة افتراضيًا** لأن إبطالها حساس للصفوف.
-* نتائج الاستعلام الفارغة **لا تُخزّن أبدًا** لتفادي استهلاك Redis غير الضروري.
-* استخدم حزم مضغوطة (`gzencode`) للمجموعات الكبيرة لتوفّر الذاكرة.
-* أولوية تحديد TTL:
+## الاستعلامات والعلاقات
 
-  1. TTL على مستوى الاستعلام (`withCustomTTL()`)
-  2. TTL على مستوى النموذج (`$cacheTTL`)
-  3. القيمة الافتراضية العامة (`config('mrcache.default_ttl')`)
+تُخزّن قراءات النماذج المؤهلة عبر `get()` و`first()` و`find()` الخصائص الخام، ثم تعيد تهيئتها بواسطة Eloquent. تبقى التحويلات والتواريخ والحقول المخفية ونوع المجموعة محفوظة. لا تُخزّن النتائج الفارغة، والحد الافتراضي للحمولة واحد MiB.
 
-</div>
+تُدعم قوائم IN ذات القيم البسيطة. تتجاوز المعاملات والأقفال والربط والاستعلامات الفرعية والتعبيرات الخام والدوال ونسخ القراءة والأشكال غير المدعومة الكاش. تبقى دوال التجميع المباشرة وcursor على قاعدة البيانات.
+
+```php
+$posts = Post::with('children')->cacheRelations(['children'])->get();
+```
+
+تحتاج العلاقات قائمة سماح صريحة للمستوى الأول. تُخزّن النماذج المرتبطة المؤهلة التي تستخدم `CacheableModel` صفوفها منفصلة، وترث سياق الأب ولا تتجاوز مدة تخزينه. تتجاوز العلاقات المتداخلة وقراءات pivot والربط الكاش.
+
+## الإبطال والاتساق
+
+افتراضياً، تبطل أحداث SQL غير SELECT المرصودة عبر Laravel والالتزامات الخارجية للمعاملات النطاق كله. تمنع الأجيال الملتقطة قارئاً بطيئاً من إعادة تعبئة الجيل الحالي بعد الإبطال. أوامر التفريغ حسب الصف أو النموذج شاملة أيضاً. تنتهي المدخلات القديمة حسب TTL؛ التفريغ ليس حذفاً مادياً للبيانات.
+
+```php
+use MrCache\Services\CacheInvalidator;
+
+$ok = app(CacheInvalidator::class)->invalidateAll();
+$ok = app(CacheInvalidator::class)->invalidateTables(['posts']);
+```
+
+افحص النتيجة المنطقية عند فشل Redis في الوضع غير الصارم. يحتاج وضع الجداول الاختياري خريطة كاملة في `mrcache.invalidation.writes` لتبعيات الجداول الفعلية، بما فيها المحفزات والحذف المتتابع. يرجع الإبطال للشمول عند الكتابة غير المعروفة والالتزام الخارجي. تصرّح `cacheDependsOn()` بتبعيات فعلية إضافية. استخدم بادئة جديدة عند تغيير وضع الإبطال.
+
+الكتابة في قاعدة البيانات والإبطال في Redis عمليتان منفصلتان. قد تترك الكتابة الخارجية أو PDO أو تعطيل الأحداث أو دوال SELECT ذات الآثار الجانبية أو انهيار العملية أو فشل الإبطال نتائج قديمة حتى انتهاء الصلاحية أو تفريغ ناجح. اقرأ قاعدة البيانات مباشرة عندما لا يقبل التطبيق هذه النافذة.
+
+### الإبطال الدائم
+
+```sh
+php artisan mrcache:install --outbox
+# راجع الترحيل المنشور ثم نفّذه على كل قاعدة بيانات مشاركة.
+php artisan migrate
+```
+
+```php
+use MrCache\Services\InvalidationOutbox;
+
+app(InvalidationOutbox::class)->transaction(null, function ($connection) use ($id) {
+    $connection->table('posts')->where('id', $id)->update(['is_published' => true]);
+}, ['posts']);
+```
+
+جدول `php artisan mrcache:outbox --batch=100` لمعالجة الإبطال المعلق. المشاركة صريحة وتسجل الإبطال في معاملة قاعدة البيانات نفسها، وتبقى السجلات الفاشلة قابلة للمحاولة. هذا إبطال نهائي وليس قراءة ذرية بين النظامين. لا تُشغّل الحزمة الترحيلات أو العمال تلقائياً.
+
+## Redis والتشغيل
+
+تستخدم التعبئة الباردة أقفالاً ذات ملكية ومهلة وانتظار محدودين. يقرأ المنتظر الذي انتهت مهلته قاعدة البيانات دون نشر نتيجة، ولا يستطيع المالك المنتهي استبدال نتيجة خلفه. تبقى سعة قاعدة البيانات وضبط معدل الطلبات ضروريين أثناء الأعطال.
+
+عند فشل Redis في الوضع غير الصارم يعود التنفيذ لقاعدة البيانات ويُعطّل العميل حتى إعادة إنشائه؛ أعد تشغيل العمال طويلي العمر بعد التعافي. يرمي الوضع الصارم استثناءً، وقد تكون كتابة قاعدة البيانات قد نجحت بالفعل. تبقى أخطاء البرمجة وقاعدة البيانات ظاهرة بصورة مستقلة.
+
+اضبط `redis.scheme=tls` لاستخدام TLS، و`redis.username` لمستخدم ACL. خيارات الشهادات الاختيارية هي `cafile` و`capath` و`peer_name` و`local_cert` و`local_pk`؛ لا يمكن تعطيل التحقق من الشهادة واسم الخادم. لا يُدعم Cluster أو Sentinel.
+
+تتضمن الحمولة الخصائص الخام المحددة، بما فيها الحقول المخفية، ولا تحمل توقيعاً للمصادقة. احمِ الوصول إلى Redis وسياسة الاحتفاظ ببياناته. تُعامل الحمولة التالفة أو القديمة أو الكبيرة أو غير القابلة لترميز JSON كغياب للكاش أو يُتجاوز تخزينها.
+
+```sh
+php artisan mrcache:doctor
+php artisan mrcache:flush
+php artisan mrcache:stats  # يتطلب store_metrics=true
+```
+
+يبث `CacheEvent` نتائج وأسباباً ومدد قراءة منقحة دون SQL أو قيم مرتبطة أو صفوف أو سياق خام. يمكن للتطبيق ربطها بأدوات المراقبة. تتوفر أدوات اختبارات للمستهلك عبر `MrCache\Testing\InteractsWithMrCache`.
+
+## التطوير والقياس
+
+```sh
+composer validate --strict
+composer install
+composer lint
+MRCACHE_TEST_REDIS_PORT=6379 composer test
+MRCACHE_TEST_REDIS_PORT=6379 MRCACHE_TEST_REDIS_CLIENT=phpredis composer test
+composer audit
+MRCACHE_TEST_REDIS_PORT=6379 vendor/bin/phpunit benchmarks/PerformanceTest.php
+```
+
+تستخدم الاختبارات SQLite وبادئات Redis معزولة. تُتجاوز اختبارات Redis صراحةً عند غياب متغير المنفذ. تحتاج اختبارات TLS أيضاً `MRCACHE_TEST_TLS_PORT` و`MRCACHE_TEST_TLS_CA` و`MRCACHE_TEST_TLS_PASSWORD_FILE`؛ تُنشأ ملفات مؤقتة للاختبار بواسطة `tests/Support/tls-fixture.sh`. يتطلب اختبار التزامن pcntl. تعرّف CI بيئات PHP/Laravel متوافقة للإصدارات 10–13 والعميلين.
+
+تشمل نتائج القياس القراءة الباردة والدافئة والكتابة والمفتاح الساخن المتزامن. قِس حمل تطبيقك وقاعدة بياناته الفعلية؛ التخزين المؤقت لا يضمن التفوق على استعلام سريع.
+
+الترخيص: [MIT](LICENSE).

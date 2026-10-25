@@ -32,6 +32,23 @@ final class RedisNativeClient implements CacheClientInterface
     public function __construct(
         private readonly array $config
     ) {
+        if (!in_array($config['redis']['client'] ?? null, ['predis', 'phpredis'], true)) {
+            throw new \InvalidArgumentException('MrCache Redis client must be predis or phpredis.');
+        }
+        foreach (['timeout', 'read_timeout'] as $option) {
+            $value = $config['redis'][$option] ?? $config['redis']['timeout'] ?? 1.0;
+            if (!is_numeric($value) || !is_finite((float) $value) || (float) $value <= 0) {
+                throw new \InvalidArgumentException('MrCache Redis timeouts must be finite and greater than zero.');
+            }
+        }
+        $scheme = $config['redis']['scheme'] ?? 'tcp';
+        if (!in_array($scheme, ['tcp', 'tls'], true)) {
+            throw new \InvalidArgumentException('MrCache Redis scheme must be tcp or tls.');
+        }
+        $tls = $config['redis']['tls'] ?? [];
+        if (!is_array($tls) || array_diff(array_keys($tls), ['cafile', 'capath', 'peer_name', 'local_cert', 'local_pk'])) {
+            throw new \InvalidArgumentException('MrCache TLS options must preserve certificate and hostname verification.');
+        }
         $this->connect();
     }
 
@@ -48,52 +65,90 @@ final class RedisNativeClient implements CacheClientInterface
         try {
             if ($usePhpRedis) {
                 $this->redis = new \Redis();
-                $this->redis->connect(
-                    $connectionConfig['host'],
+                if (!@$this->redis->connect(
+                    (($connectionConfig['scheme'] ?? 'tcp') === 'tls' ? 'tls://' : '').$connectionConfig['host'],
                     (int) $connectionConfig['port'],
-                    (float) $connectionConfig['timeout']
-                );
-
-                if (!empty($connectionConfig['password'])) {
-                    $this->redis->auth($connectionConfig['password']);
+                    (float) $connectionConfig['timeout'],
+                    null, 0, (float) ($connectionConfig['read_timeout'] ?? $connectionConfig['timeout']),
+                    ($connectionConfig['scheme'] ?? 'tcp') === 'tls' ? ['stream' => $this->tlsOptions()] : null
+                )) {
+                    throw new \RedisException('Redis connection failed.');
                 }
 
-                $this->redis->select((int) $connectionConfig['database']);
+                if (!empty($connectionConfig['password'])) {
+                    if (!$this->redis->auth(!empty($connectionConfig['username']) ? [$connectionConfig['username'], $connectionConfig['password']] : $connectionConfig['password'])) {
+                        throw new \RedisException('Redis authentication failed.');
+                    }
+                }
+
+                if (!$this->redis->select((int) $connectionConfig['database'])) {
+                    throw new \RedisException('Redis database selection failed.');
+                }
+                $this->redis->setOption(\Redis::OPT_READ_TIMEOUT, (float) ($connectionConfig['read_timeout'] ?? $connectionConfig['timeout']));
                 $this->isPhpRedis = true;
             } elseif (class_exists(PredisClient::class)) {
                 $this->redis = new PredisClient([
-                    'scheme' => 'tcp',
+                    'scheme' => $connectionConfig['scheme'] ?? 'tcp',
+                    'ssl' => $this->tlsOptions(),
+                    ...(!empty($connectionConfig['username']) ? ['username' => $connectionConfig['username']] : []),
                     'host'   => $connectionConfig['host'],
                     'port'   => $connectionConfig['port'],
                     'timeout' => $connectionConfig['timeout'],
+                    'read_write_timeout' => $connectionConfig['read_timeout'] ?? $connectionConfig['timeout'],
                     'database' => $connectionConfig['database'],
                     ...($connectionConfig['password'] ? ['password' => $connectionConfig['password']] : []),
                 ]);
-                $this->redis->connect();
+                @$this->redis->connect();
                 $this->isPhpRedis = false;
             }
-        } catch (\Throwable $e) {
+        } catch (\RedisException|\Predis\PredisException $e) {
             $this->redis = null;
             if ($this->config['strict_mode']) {
-                throw new RedisConnectionException('MrCache: Failed to connect to Redis. ' . $e->getMessage(), 0, $e);
+                throw new RedisConnectionException('MrCache: Failed to connect to Redis.', 0, $e);
             }
-            Log::warning('MrCache: Failed to connect to Redis. Caching is disabled.', ['exception' => $e]);
+            Log::warning('MrCache: Redis connection unavailable; caching disabled for this client.');
+            $this->unavailableEvent('connection');
         }
+    }
+
+    private function unavailableEvent(string $reason): void
+    {
+        if (function_exists('app') && app()->bound(CacheObserver::class)) {
+            app(CacheObserver::class)->record('redis_unavailable', $reason);
+        }
+    }
+
+    private function tlsOptions(): array
+    {
+        return ['verify_peer' => true, 'verify_peer_name' => true] + ($this->config['redis']['tls'] ?? []);
     }
 
     private function execute(callable $callback)
     {
         if (!$this->redis) {
+            if ($this->config['strict_mode']) {
+                throw new RedisConnectionException('MrCache: Redis client is unavailable.');
+            }
             return null;
         }
 
         try {
-            return $callback($this->redis);
-        } catch (\Throwable $e) {
-            if ($this->config['strict_mode']) {
-                throw new RedisConnectionException('MrCache: Redis command failed. ' . $e->getMessage(), 0, $e);
+            if ($this->isPhpRedis) {
+                $this->redis->clearLastError();
             }
-            Log::warning('MrCache: Redis command failed.', ['exception' => $e]);
+            $result = $callback($this->redis);
+            // phpredis may return false for a server error instead of throwing.
+            if ($this->isPhpRedis && $this->redis->getLastError() !== null && $this->redis->getLastError() !== false) {
+                throw new \RedisException('Redis server returned a command error.');
+            }
+            return $result;
+        } catch (\RedisException|\Predis\PredisException $e) {
+            $this->redis = null; // Circuit breaker for this client lifetime; no repeated error logging.
+            if ($this->config['strict_mode']) {
+                throw new RedisConnectionException('MrCache: Redis command failed.', 0, $e);
+            }
+            Log::warning('MrCache: Redis command failed; caching disabled for this client.');
+            $this->unavailableEvent('command');
             return null;
         }
     }
@@ -141,34 +196,41 @@ final class RedisNativeClient implements CacheClientInterface
 
     public function scanKeys(string $pattern): \Generator
     {
-        if (!$this->redis) {
-            yield from [];
-            return;
-        }
-
         if ($this->isPhpRedis) {
-            $iterator = null;
-            while ($keys = $this->redis->scan($iterator, $pattern)) {
-                foreach ($keys as $key) {
+            $cursor = null;
+            do {
+                $keys = $this->execute(function ($redis) use (&$cursor, $pattern) { return $redis->scan($cursor, $pattern, 100); });
+                // SCAN needs a cursor passed by reference, including across empty pages.
+                if ($keys === null) {
+                    return;
+                }
+                foreach ($keys ?: [] as $key) {
                     yield $key;
                 }
-            }
-        } else {
-            // Predis SCAN returns an iterator
-            foreach ($this->redis->scan('MATCH', $pattern) as $key) {
-                yield $key;
-            }
+            } while ($cursor !== 0);
+            return;
         }
+        $cursor = '0';
+        do {
+            $page = $this->execute(fn ($redis) => $redis->scan($cursor, ['match' => $pattern, 'count' => 100]));
+            if ($page === null) {
+                return;
+            }
+            [$cursor, $keys] = $page;
+            yield from $keys;
+        } while ((string) $cursor !== '0');
     }
 
     public function eval(string $script, array $keys = [], array $args = []): mixed
     {
-        return $this->execute(fn($redis) => $redis->eval($script, array_merge($keys, $args), count($keys)));
+        return $this->execute(fn ($redis) => $this->isPhpRedis
+            ? $redis->eval($script, array_merge($keys, $args), count($keys))
+            : $redis->eval($script, count($keys), ...array_merge($keys, $args)));
     }
 
     public function info(?string $section = null): array
     {
-        return (array) $this->execute(fn($redis) => $redis->info($section));
+        return (array) $this->execute(fn($redis) => $section === null ? $redis->info() : $redis->info($section));
     }
 
     public function pipeline(callable $callback): ?array
@@ -176,8 +238,13 @@ final class RedisNativeClient implements CacheClientInterface
         return $this->execute(function ($redis) use ($callback) {
             if ($this->isPhpRedis) {
                 $pipe = $redis->multi(\Redis::PIPELINE);
-                $callback($pipe);
-                return $pipe->exec();
+                try {
+                    $callback($pipe);
+                    return $pipe->exec();
+                } catch (\Throwable $error) {
+                    $pipe->discard();
+                    throw $error;
+                }
             }
     
             // Predis mode

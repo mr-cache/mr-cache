@@ -18,6 +18,15 @@ use MrCache\Services\KeyGenerator;
 use MrCache\Services\RedisNativeClient;
 use MrCache\Services\QueryColumnMatcher;
 
+use MrCache\Services\CacheObserver;
+use MrCache\Services\PolicyResolver;
+use MrCache\Services\CacheInspector;
+use MrCache\Services\QueryEligibility;
+use MrCache\Services\CacheInvalidator;
+use MrCache\Services\InvalidationOutbox;
+use MrCache\Commands\MrCacheDoctorCommand;
+use MrCache\Commands\MrCacheInstallCommand;
+use MrCache\Commands\MrCacheOutboxCommand;
 
 class MrCacheServiceProvider extends ServiceProvider
 {
@@ -37,19 +46,10 @@ class MrCacheServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(CacheManager::class, function ($app) {
-            // Add a public method to CacheManager to decode payloads
-            // This is a quick way to share the logic with InvalidationManager
-            if (!method_exists(CacheManager::class, 'decodePayload')) {
-                \MrCache\Services\CacheManager::macro('decodePayload', function (string $rawPayload) {
-                    // @phpstan-ignore-next-line
-                    return $this->decodePayload($rawPayload);
-                });
-            }
-
             return new CacheManager(
                 $app->make(CacheClientInterface::class),
                 $app->make(KeyGeneratorInterface::class),
-                app(QueryColumnMatcher::class),
+                $app->make(QueryColumnMatcher::class),
                 $app['config']['mrcache']
             );
         });
@@ -63,7 +63,19 @@ class MrCacheServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton(CacheObserver::class, fn ($app) => new CacheObserver($app['events']));
+        $this->app->bind(PolicyResolver::class, fn ($app) => new PolicyResolver($app['config']['mrcache']));
+        $this->app->bind(CacheInspector::class, fn ($app) => new CacheInspector(
+            $app->make(PolicyResolver::class), new QueryEligibility()));
+        $this->app->singleton(CacheInvalidator::class, fn ($app) => new CacheInvalidator(
+            $app->make(CacheClientInterface::class), $app['config']['mrcache'], $app->make(CacheObserver::class)));
+        $this->app->bind(InvalidationOutbox::class, fn ($app) => new InvalidationOutbox(
+            $app['db'], $app->make(CacheInvalidator::class), $app->make(CacheObserver::class), $app['config']['mrcache']));
+
         $this->commands([
+            MrCacheDoctorCommand::class,
+            MrCacheInstallCommand::class,
+            MrCacheOutboxCommand::class,
             MrCacheFlushCommand::class,
             MrCacheStatsCommand::class,
         ]);
@@ -75,28 +87,41 @@ class MrCacheServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../../config/mrcache.php' => config_path('mrcache.php'),
             ], 'mrcache-config');
+            $this->publishes([__DIR__.'/../../database/migrations/2026_10_25_000001_create_mrcache_outbox_table.php' => database_path('migrations/2026_10_25_000001_create_mrcache_outbox_table.php')], 'mrcache-migrations');
         }
 
         $this->registerMacros();
+
+        $invalidate = function (): void {
+            if (config('mrcache.enabled', false)) {
+                $this->app->make(CacheInvalidator::class)->invalidateAll();
+            }
+        };
+        $this->app['events']->listen(\Illuminate\Database\Events\QueryExecuted::class, function ($event): void {
+            // Ordinary SELECT is treated as read-only. Side-effecting SELECT
+            // functions need manual invalidation; unknown statements invalidate.
+            if (!preg_match('/^\s*select\b/i', $event->sql)) {
+                $table = \MrCache\Services\TableNames::mutation($event->sql);
+                $internal = ($event->connection->getTablePrefix()).config('mrcache.outbox.table', 'mrcache_outbox');
+                if ($table !== strtolower($internal) && config('mrcache.enabled', false)) {
+                    $this->app->make(CacheInvalidator::class)->observe($event->sql);
+                }
+            }
+        });
+        $this->app['events']->listen(\Illuminate\Database\Events\TransactionCommitted::class, function ($event) use ($invalidate): void {
+            if ($event->connection->transactionLevel() === 0) {
+                $invalidate();
+            }
+        });
     }
 
     private function registerMacros(): void
     {
-        // Make the decodePayload method public for InvalidationManager to use
-        $reflection = new \ReflectionClass(CacheManager::class);
-        $method = $reflection->getMethod('decodePayload');
-        if (!$method->isPublic()) {
-            $method->setAccessible(true);
-        }
-        
-        InvalidationManager::macro('decodePayload', function (string $payload) use ($method) {
-            return $method->invoke(app(CacheManager::class), $payload);
-        });
-
-
         $macros = new EloquentCacheMacros();
-        Builder::macro('withoutCaching', $macros->withoutCaching());
-        Builder::macro('withCustomTTL', $macros->withCustomTTL());
-        Builder::macro('cache', $macros->cache());
+        foreach (['withoutCaching', 'withCustomTTL', 'cache'] as $name) {
+            if (!Builder::hasGlobalMacro($name)) {
+                Builder::macro($name, $macros->$name());
+            }
+        }
     }
 }

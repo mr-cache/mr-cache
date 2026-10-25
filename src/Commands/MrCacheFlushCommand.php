@@ -23,7 +23,7 @@ class MrCacheFlushCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Flush the MrCache for the application, a specific model, or a specific row.';
+    protected $description = 'Invalidate the MrCache namespace (model/row selectors are conservative).';
 
     /**
      * Execute the console command.
@@ -36,7 +36,15 @@ class MrCacheFlushCommand extends Command
         $modelClass = $this->option('model');
         $pk = $this->option('pk');
 
-        if ($modelClass && $pk) {
+        if ($pk !== null && !$modelClass) {
+            $this->error('--pk requires --model.');
+            return self::FAILURE;
+        }
+        if ($modelClass && (!class_exists($modelClass) || !is_subclass_of($modelClass, \Illuminate\Database\Eloquent\Model::class))) {
+            $this->error('The --model option must name an Eloquent model class.');
+            return self::FAILURE;
+        }
+        if ($modelClass && $pk !== null) {
             $this->flushRow($invalidator, $modelClass, $pk);
         } elseif ($modelClass) {
             $this->flushModel($invalidator, $modelClass);
@@ -49,9 +57,9 @@ class MrCacheFlushCommand extends Command
 
     private function flushAll(InvalidationInterface $invalidator): void
     {
-        $this->info('Flushing all MrCache keys...');
+        $this->info('Invalidating the MrCache namespace...');
         $invalidator->flushAll();
-        $this->info('MrCache completely flushed.');
+        $this->info('MrCache namespace invalidated; old entries expire by TTL.');
     }
 
     private function flushModel(InvalidationInterface $invalidator, string $modelClass): void
@@ -66,7 +74,7 @@ class MrCacheFlushCommand extends Command
 
         $this->info("Flushing MrCache for model [{$modelClass}] (table: {$table})...");
         $invalidator->invalidateTable($table);
-        $this->info("Cache for model [{$modelClass}] flushed.");
+        $this->info('MrCache namespace invalidated; model selectors are conservative.');
     }
 
     private function flushRow(InvalidationInterface $invalidator, string $modelClass, string|int $pk): void
@@ -81,6 +89,6 @@ class MrCacheFlushCommand extends Command
 
         $this->info("Flushing MrCache for row in [{$modelClass}] with PK [{$pk}]...");
         $invalidator->invalidateRow($table, $pk);
-        $this->info("Cache for row [{$pk}] in model [{$modelClass}] flushed.");
+        $this->info('MrCache namespace invalidated; row selectors are conservative.');
     }
 }
