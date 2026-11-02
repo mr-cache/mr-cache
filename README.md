@@ -16,14 +16,14 @@ MrCache depends on Predis `^2.0`; phpredis is optional. Framework compatibility 
 
 ## Installation
 
-This README documents the `5.x` development branch. Install that branch with:
+Current stable release: **5.0.0**.
 
 ```sh
-composer require mrcache/mrcache:5.x-dev
+composer require mrcache/mrcache
 php artisan vendor:publish --provider="MrCache\Providers\MrCacheServiceProvider" --tag="mrcache-config"
 ```
 
-For a tagged release, use `composer require mrcache/mrcache` and follow the README for that release.
+This README documents the `5.x` line. To track unreleased changes on the development branch, require `mrcache/mrcache:5.x-dev` instead.
 
 Configure Redis and a unique application/environment namespace before enabling caching:
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 5.x
+## 5.0.0 — 2026-11-02
 
 ### Compatibility
 
