@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.0.1 — 2026-11-02
+
+No library/runtime changes; identical behavior to 5.0.0.
+
+### Fixed
+
+- Test suite: the Redis connection-failure tests simulated a dead server with
+  port `0`, which Predis treats as refused but phpredis does not, so those two
+  tests failed on the phpredis CI leg. They now use a closed port so the refusal
+  is reliable on both clients. Full matrix (Laravel 10–13 × Predis/phpredis)
+  is green.
+
+### Added
+
+- CI status, latest-version and license badges in the README.
+
 ## 5.0.0 — 2026-11-02
 
 ### Compatibility
