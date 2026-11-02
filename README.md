@@ -4,6 +4,10 @@ Redis query caching for Laravel and Eloquent, with explicit lifetimes, cache pol
 
 [العربية](README_AR.md) · [Packagist](https://packagist.org/packages/mrcache/mrcache) · [Upgrade notes](CHANGELOG.md)
 
+[![Tests](https://github.com/mr-cache/mr-cache/actions/workflows/php.yml/badge.svg)](https://github.com/mr-cache/mr-cache/actions/workflows/php.yml)
+[![Latest Stable Version](https://img.shields.io/packagist/v/mrcache/mrcache.svg)](https://packagist.org/packages/mrcache/mrcache)
+[![License](https://img.shields.io/packagist/l/mrcache/mrcache.svg)](LICENSE)
+
 ## Compatibility
 
 | Laravel / Illuminate | Minimum PHP |
