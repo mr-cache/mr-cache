@@ -214,7 +214,7 @@ class CachingTest extends TestCase
     public function test_non_strict_connection_failure_falls_back_and_strict_failure_throws(): void
     {
         $config = config('mrcache');
-        $config['redis']['port'] = 0;
+        $config['redis']['port'] = 1; // closed port: reliable connection refusal on both predis and phpredis
         $config['strict_mode'] = false;
         $client = new RedisNativeClient($config);
         $this->app->instance(CacheClientInterface::class, $client);

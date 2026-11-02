@@ -226,7 +226,7 @@ class ApprovedFeaturesTest extends TestCase
         app(InvalidationOutbox::class)->transaction(null, fn () => null);
         $config = config('mrcache');
         $config['strict_mode'] = false;
-        $config['redis']['port'] = 0;
+        $config['redis']['port'] = 1; // closed port: reliable connection refusal on both predis and phpredis
         $bad = new RedisNativeClient($config);
         $invalidator = new CacheInvalidator($bad, $config, app(\MrCache\Services\CacheObserver::class));
         $failed = new InvalidationOutbox(app('db'), $invalidator, app(\MrCache\Services\CacheObserver::class), $config);
